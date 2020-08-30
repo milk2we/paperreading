@@ -126,5 +126,4 @@ GEMM约占训练期间总计算周期的70％（如我们在第二节中所示�
 
 >The rest of the paper is organized as follows: Sec. II discusses modern training workloads and their GEMM characteristics. Sec. III dissects state-of-the-art deep learning accelerators and design considerations. Sec. IV proposes the SIGMA microarchitecture, and Sec. V describes the physical implementation and hardware costs. Sec. VI evaluates the performance of SIGMA against the state-of-the-art. Sec. VII discusses the related works, and Sec. VIII concludes.
 
-本文的其余部分安排如下： 第二章讨论了现代培训工作量及其GEMM特性。 第三部分剖析了最先进的深度学习加速器和设计注意事项。 第
-四部分提出了SIGMA微体系结构和。第五部分描述了物理实现和硬件成本。 第六部分根据最新技术评估SIGMA的性能。 第七节讨论了相关作品。 第八章总结。
+本文的其余部分安排如下： 第二章讨论了现代培训工作量及其GEMM特性。 第三部分剖析了最先进的深度学习加速器和设计注意事项。 第四部分提出了SIGMA微体系结构。第五部分描述了物理实现和硬件成本。 第六部分根据最新技术评估SIGMA的性能。 第七节讨论了相关作品。 第八章总结。
