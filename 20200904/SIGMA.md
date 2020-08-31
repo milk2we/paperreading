@@ -127,3 +127,80 @@ GEMM约占训练期间总计算周期的70％（如我们在第二节中所示�
 >The rest of the paper is organized as follows: Sec. II discusses modern training workloads and their GEMM characteristics. Sec. III dissects state-of-the-art deep learning accelerators and design considerations. Sec. IV proposes the SIGMA microarchitecture, and Sec. V describes the physical implementation and hardware costs. Sec. VI evaluates the performance of SIGMA against the state-of-the-art. Sec. VII discusses the related works, and Sec. VIII concludes.
 
 本文的其余部分安排如下： 第二章讨论了现代培训工作量及其GEMM特性。 第三部分剖析了最先进的深度学习加速器和设计注意事项。 第四部分提出了SIGMA微体系结构。第五部分描述了物理实现和硬件成本。 第六部分根据最新技术评估SIGMA的性能。 第七节讨论了相关作品。 第八章总结。
+
+> * DL训练特性
+
+>In this section, we analyze GEMM kernel shapes and sparsity levels from modern deep learning applications. 
+
+>Target Workloads. For the kernel characterization exercise, we consider three workloads: Transformer [42], Google Neural Machine Translation (GNMT) [45], and Neural Collaborative Filtering (NCF) [20]. We also leverage ”Baidu DeepBench” [2], which identifies key GEMM kernels encountered across various CNNs/ RNNs/ LSTMs. For Transformer, we use a 324 Million parameter model [43] with the LM1B (billion word corpus) dataset. For GNMT, we evaluate the state of art 8-layer GNMT model with WMTGerman-English dataset.
+
+在本部分中，我们将从现代深度学习应用程序分析GEMM内核形状和稀疏性特性。
+
+目标工作量。 针对于内核的表征方法，我们考虑了三种工作负载：Transformer[42]，谷歌神经机器翻译（GNMT）[45]和神经协作过滤（NCF）[20]。 我们还利用“百度DeepBench” [2]，它确定了跨各种CNN / RNN / LSTM遇到的关键GEMM内核。 对于Transformer，我们将324百万参数模型[43]与LM1B（十亿字语料库）数据集一起使用。 对于GNMT，我们使用WMTGerman-English数据集评估了最新的8层GNMT模型。
+
+    [42] A. Vaswani, et al., “Attention is all you need,” CoRR, vol. abs/1706.03762, 2017.
+    [45] Y. Wu et al., “Google’s neural machine translation system: Bridging the gap between human and machine translation,” 2016.
+    [2] “Baidu-deep bench,” 2016.
+    [43] A. Vaswani et al., “Tensor2tensor for neural machine translation,”CoRR, vol. abs/1803.07416, 2018.
+
+>Time-Breakdown of Compute Primitives. Figure 2 shows the time break-up of different operations when training GNMT and Transformer on a NVIDIA V100 GPU [31]. We observe that approximately 70% of time is spent on matrix multiplications (MatMul) operations or operations that can cast as MatMuls. Thus, MatMul is a key compute primitive to accelerate in hardware to speed-up training.
+
+计算基元的时间分解。 图2显示了在NVIDIA V100 GPU上训练GNMT和Transformer时，不同操作的时间分解[31]。 我们观察到大约70％的时间花费在矩阵乘法（MatMul）运算或可以转换为MatMuls的运算上。 因此，MatMul是关键的计算原语，可以在硬件上加速以加快训练速度。
+
+![20200831095925](https://raw.githubusercontent.com/milk2we/picgo/master/images/20200831095925.png)
+
+    [31] Nvidia, “Nvidia tesla v100 gpu architecture,” in Volta Architecture Whitepaper, 2017.
+
+>GEMM shapes. Transformer, GNMT, NCF and DeepBench [2] have matrices of different sizes and shapes as shown in Fig. 1b. Training is performed in different batch sizes, which lead to different input matrix dimensions. The observed shapes of the operand matrices vary from tall-skinny (rows dominate over columns) to fat-short (columns dominate over rows) - this is due to low minibatch sizes. Thus, GEMM accelerators need scalability and flexibility to handle large and irregular GEMM sizes efficiently.
+
+GEMM形状。 Transformer，GNMT，NCF和DeepBench [2]具有不同大小和形状的矩阵，如图1b所示。 训练的时候batch_size的大小不同，这导致了不同的输入矩阵尺寸。 观察到的操作数矩阵的形状从高瘦（行占列为主）到胖短（列占行为主）-这是由于小批量的大小所致。 因此，GEMM加速器需要可拓展性和灵活性，以有效处理较大和不规则的GEMM尺寸。
+
+    [2] “Baidu-deep bench,” 2016.
+
+>Sparsity within GEMMs. As the objective of this work is not focused on algorithm techniques to generate sparse models, we leverage a pruning approach similar to Zhu et al. [48] via a slow sparsification technique that increases the sparsity level of weights from zero to a final sparsity level in a fixed set of pruning steps.
+
+GEMM中的稀疏性。 由于这项工作的目标不是集中在生成稀疏模型的算法技术上，因此我们采用了与Zhu等类似的修剪方法[48]通过慢速稀疏化技术，在固定的一组修剪步骤中将权重的稀疏性级别从零增加到最终稀疏性级别。
+
+    [48] M. H. Zhu and S. Gupta, “To prune, or not to prune: exploring the efficacy of pruning for model compression,” arXiv:1710.01878v2 [stat.ML], 2017.
+
+>For GNMT [45] with ∼210M parameters, we achieve close to state-of-the-art accuracy with 90% weight sparsity (resulting in ∼22M parameters), similar to results outlined in [48]. The pruning is applied to embedding, decoder projection layer and all LSTM layers in both the encoder and decoder. Workloads like transformer and ResNet-50 also exhibits good accuracy with around 80% and 70% weight sparsity respectively [15]. Activation sparsity in DNN models comes from ReLU and dropout layers.
+
+对于具有〜210M参数的GNMT [45]，我们获得了90％的重量稀疏度（达到〜22M参数），接近了最先进的精度，类似于[48]中概述的结果。 修剪应用于编码器和解码器中的嵌入，解码器投影层和所有LSTM层。 诸如变压器和ResNet-50之类的工作负载也具有良好的精度，其稀疏度分别约为80％和70％[15]。 DNN模型中的激活稀疏性来自ReLU和dropout层。
+
+    [48] M. H. Zhu and S. Gupta, “To prune, or not to prune: exploring the efficacy of pruning for model compression,” arXiv:1710.01878v2 [stat.ML], 2017.
+    [45] Y. Wu et al., “Google’s neural machine translation system: Bridging the gap between human and machine translation,” 2016.
+    [15] T. Gale et al., “The state of sparsity in deep neural networks,” arXiv:1902.09574v1 [cs.LG], 2019.
+
+
+>Improper handling of sparse matrices wastes compute resources and causes unnecessary but expensive movement of zeros across the memory hierarchy. As matrices are getting bigger and sparser, the need for sparsity support becomes more important. Thus, GEMM accelerators need support to handle both weight and activation sparsity efficiently.
+
+稀疏矩阵的处理不当会浪费计算资源，并在内存层次结构中导致零的不必要但昂贵的移动。 随着矩阵越来越大和越来越稀疏，稀疏支持的需求变得越来越重要。 因此，GEMM加速器需要支持以有效处理权重和激活稀疏性。
+
+
+>* 分析GPUs和TPUs效率低下的原因
+
+>In this section, we demonstrate the inefficiencies with current GEMM accelerators, and discuss the design choices Figure 3: GPU performance evaluation on different GEMMs. that eventually lead to our proposed design.
+
+在本节中，我们演示了当前GEMM加速器的低效率，并讨论了设计选择。图3：不同GEMM上的GPU性能评估。 最终我们提出了设计方案。
+
+
+
+![20200831103210](https://raw.githubusercontent.com/milk2we/picgo/master/images/20200831103210.png)
+
+>A. Irregular and Sparse GEMMs on GPU
+>We measured the compute efficiency on V100 GPUs with and without sparsity for various GEMM dimensions. In Fig. 3a, we run some of the deep learning MatMul kernels (dense irregular without any sparsity) for workloads described in Sec. II on a single card V100 GPU and measure the efficiency with FP32 and FP16 data type. FP16 data type can take advantage of the systolic arrays (“tensor cores”) in V100 for GEMM computation. While FP16 uses the tensor cores to boost the efficiency compared to the FP32 version, they still operate at a fraction of the peak efficiency due to irregularity in kernel dimensions; whereas a dense regular GEMM (2k, 2k, 2k) with FP16 tensor cores provide up to 76% efficiency.
+
+我们测量了具有和不具有稀疏性的各种GEMM尺寸的V100 GPU的计算效率。 在图3a中，运行了一些第二章描述的工作负载深度学习模型MatMul内核（密集的不规则而没有任何稀疏性）。 在单卡V100 GPU上，并使用FP32和FP16数据类型测量效率。 FP16数据类型可以利用V100中的脉动阵列（“张量核心”）进行GEMM计算。 与FP32版本相比，虽然FP16使用张量内核来提高效率，但由于内核尺寸的不规则性，它们仍只能以峰值效率的一小部分工作。 而带有FP16张量芯的密集常规GEMM（2k，2k，2k）可提供高达76％的效率。
+
+>We then introduce sparsity to the above MatMul kernels and use NVIDIA cuSPARSE [5] libraries, which support sparse matrices computation. cuSPARSE libraries API currently support only one of the matrices to be sparse with only FP32 data type. In this experiment, we induce random sparsity of 50% and 80% to one of the matrices while keeping the other matrix dense. From Fig. 3b, we observe on average 4x reduction in efficiency compared to the equivalent dense FP32 matrix computation by adding sparsity. We expect the efficiency to decrease further when both matrices are sparse. Current GPU systems cannot efficiently map sparse GEMM computation onto their compute engine when there is no structure in the sparsity, and thus we need to fundamentally re-architect how we design a system that can take advantage of sparse computation to achieve high efficiency for deep learning workloads.
+
+然后，我们为上述MatMul内核引入稀疏性，并使用NVIDIA cuSPARSE [5]库，该库支持稀疏矩阵计算。 cuSPARSE库API当前仅支持使用FP32数据类型稀疏的一种矩阵。 在此实验中，我们对其中一个矩阵诱导了50％和80％的随机稀疏性，同时使另一个矩阵保持密集。 从图3b中，通过添加稀疏度，与等效的密集FP32矩阵计算相比，我们观察到效率平均降低4倍。 当两个矩阵都稀疏时，我们期望效率会进一步降低。 当稀疏性中没有任何结构时，当前的GPU系统无法将稀疏的GEMM计算有效地映射到其计算引擎上，因此，我们需要从根本上重新设计我们如何设计一种系统，该系统可以利用稀疏计算来实现深度学习的高效率工作量。
+
+    [5] “https://docs.nvidia.com/cuda/cusparse/index.html,” 2019.
+
+>B. Irregular and Sparse GEMMs on TPU 
+
+>Google’s TPUs are a poster-child for large GEMMs due to their 128×128 systolic array. However, across a suite of GEMMs from modern DL workloads, we observe that it is common to have less than 50% of the array utilized when running irregular matrices, as we show later in Sec. VI. In addition, systolic arrays cannot inherently address sparsity. The reasons for these inefficiencies are discussed next.
+
+Google的TPU由于其128×128的收缩阵列而成为大型GEMM的衍生品。 但是，在来自现代DL工作负载的GEMM套件中，我们观察到运行不规则矩阵时阵列的利用率不足50％是很常见的，正如我们稍后在Sec VI中所示。 另外，脉动阵列不能固有地解决稀疏性。 接下来讨论这些效率低下的原因。
+
