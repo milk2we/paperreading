@@ -234,6 +234,7 @@ C. GEMMs on Systolic Arrays vs. SIGMA
 
 >Fig. 4e shows the N-str, M-str dataflow (i.e., No Local Reuse [10]) for the Flex-DPE that fully utilizes the compute. This is done by streaming only necessary multiplication pairs and not keeping any values stationary. We provide more details about the distribution and reduction network architecture that can enable this feature in Section IV. The equivalent dataflow is not possible for the systolic array as it does not allow arbitrary pairings of vectors from the M and N matrices due to its rigid cycle-by-cycle forwarding network.
 
+图4e示出了充分利用计算的Flex-DPE的N-str，M-str数据流（即，无本地重用[10]）。 通过仅传输必要的乘法对而不使任何值保持不变来完成此操作。 我们将在第IV节中提供有关可启用此功能的分发和缩减网络体系结构的更多详细信息。 对于脉动阵列，等效数据流是不可能的，因为由于其严格的逐周期转发网络，它不允许来自M和N矩阵的向量的任意配对。
 
 >Distribution and Reduction Latency. Another point to notice from the quantitative data in Fig. 4b-e is that the data loading and accumulation time in systolic arrays is always proportional to the array dimensions, while SIGMA’s networks allow O(1) distribution and O(log2N) reduction.
 
