@@ -204,3 +204,219 @@ GEMM中的稀疏性。 由于这项工作的目标不是集中在生成稀疏模
 
 Google的TPU由于其128×128的收缩阵列而成为大型GEMM的衍生品。 但是，在来自现代DL工作负载的GEMM套件中，我们观察到运行不规则矩阵时阵列的利用率不足50％是很常见的，正如我们稍后在Sec VI中所示。 另外，脉动阵列不能固有地解决稀疏性。 接下来讨论这些效率低下的原因。
 
+C. GEMMs on Systolic Arrays vs. SIGMA 
+
+>Systolic arrays face under-utilization in many different scenarios due to two inherent features: a rigid shape, and a simple but rigid interconnect. In Fig. 4, we contrast a systolic array against an abstract view of SIGMA’s Flex DPE (which will be presented in detail later in Sec. IV-A). Fig. 4a shows three example GEMM operations: (i) dense regular, (ii) dense irregular and (iii) sparse irregular matrices. The shaded boxes in the figure highlight quantitative metrics such as utilization, runtime, multicast behavior, and SRAM reads/writes for each example. For the purposes of this example, it is sufficient to assume that SIGMA’s Flex-DPE has two specialized networks between the PEs and the SRAMs on the sides of the array (not shown in the figure) - a distribution network and a reduction network. The specific mplementation of these networks is discussed later in Sec. IV.
+
+由于两个固有特征：刚性形状和简单但刚性的互连，收缩压阵列在许多不同情况下都面临利用率不足的问题。 在图4中，我们将脉动阵列与SIGMA Flex DPE的抽象视图进行了对比（稍后将在第四节-A节中详细介绍）。 图4a显示了三个示例GEMM操作：（i）密集的规则，（ii）密集的不规则和（iii）稀疏的不规则矩阵。 图中的阴影框突出显示了每个指标的定量指标，例如利用率，运行时间，多播行为以及SRAM读/写。 就本示例而言，假设SIGMA的Flex-DPE在PE和阵列侧面的SRAM之间（图中未显示）有两个专用网络-分配网络和简化网络。 这些网络的具体实现将在第四章中讨论。
+
+![20200831173110](https://raw.githubusercontent.com/milk2we/picgo/master/images/20200831173110.png)
+
+>Dense Regular Matrices. Fig. 4b shows how the dense regular matrices are mapped. In the example, we use a KN matrix stationary, and MK matrix streaming dataflow (Nsta, M-str). An alternate term for this dataflow is weightstationary, and is used by the Google TPU [23], [37]. Partial sums are generated at each cross-point and accumulated over the columns. The systolic array and Flex-DPE designs are able to fully utilize its PEs by mapping all of KN matrix onto its PEs. They key differences between the two are that (i) a systolic array sends the streaming matrix in a store and forward manner, while SIGMA multicasts the data to the corresponding PEs in one cycle, and (ii) the systolic array uses a linear reduction while SIGMA uses a tree-based reduction, as we describe later in Sec. IV.
+
+密集的常规矩阵。 图4b显示了如何映射密集的规则矩阵。 在示例中，我们使用固定的KN矩阵和MK矩阵流数据流（Nsta，M-str）。 此数据流的另一个术语是weightstationary，由Google TPU [23]，[37]使用。 在每个交叉点生成部分和，并将其累加到各列上。 通过将所有KN矩阵映射到其PE上，脉动阵列和Flex-DPE设计能够充分利用其PE。 它们之间的主要区别在于（i）脉动阵列以存储和转发方式发送流矩阵，而SIGMA在一个周期内将数据多播到相应的PE，并且（ii）脉动阵列使用线性缩减，而 SIGMA使用基于树的约简，正如我们稍后将在SecIV中描述的那样。
+
+![20200831173923](https://raw.githubusercontent.com/milk2we/picgo/master/images/20200831173923.png)
+
+>Dense Irregular Matrices. Fig. 4c shows how dense irregular matrices are mapped. A systolic array design suffers from under-utilization due to its rigid structure. Despite the fact that there are 16 elements in the dense irregular KN matrix and 16 PEs in the systolic array, only half of the matrix can be mapped at a time. This is due to the rigid shape of the systolic array. All partial sums are accumulated down a column via forwarding; mapping the other half of the dense irregular N-matrix onto the systolic array at the same time will lead to incorrect functionality, since the accumulated output (a.A+b.I) should not get added to (a.E + b.M). The second half of the N-matrix will therefore have to be loaded once the first half of the matrix is computed, more than doubling the computation time. In contrast, the Flex-DPE is able to map all of the dense irregular stationary elementsat one go, utilizing all PEs completely. This is enabled by having a flexible reduction network that can accumulate both sets of outputs (a.A+b.I) and (a.E + b.M) separately and concurrently, as we describe later in Sec. IV. This not only provides a runtime advantage, but also an energy advantage since the M-matrix only needs to be read and streamed through the array once. 
+
+密集的不规则矩阵。图4c示出了如何映射稠密的不规则矩阵。脉动阵列设计由于其刚性结构而无法充分利用。尽管在密集的不规则KN矩阵中有16个元素，在收缩阵列中有16个PE，但一次只能映射一半的矩阵。这是由于脉动阵列的刚性形状。所有部分金额都通过转发向下累积到一列；同时将另一半稠密的不规则N矩阵映射到收缩阵列会导致功能不正确，因为不应将累加的输出（a.A + b.I）添加到（a.E + b.M）。因此，一旦矩阵的前半部分被计算出来，就必须加载N矩阵的后半部分，这将使计算时间增加一倍以上。相比之下，Flex-DPE可以一次绘制所有密集的不规则固定元素，从而完全利用所有PE。正如我们稍后将在本节中介绍的那样，它具有灵活的归约网络，可以分别和同时积累两组输出（a.A + b.I）和（a.E + b.M）。 IV。这不仅提供了运行时优势，而且还提供了能源优势，因为仅需读取M矩阵并将其流式传输一次即可。
+
+![20200902091035](https://raw.githubusercontent.com/milk2we/picgo/master/images/20200902091035.png)
+
+
+>Sparse Irregular Matrices. Fig. 4d shows how sparse irregular matrices are mapped. Not only does a systolic array suffer under-utilization from irregular matrices, but also from sparsity. To maintain correctness of the final output, a systolic array must map the non-zero values onto the compute unit. This limitation comes due to the rigid forwarding network between PEs. The Flex-DPE design is able to map only non-zero elements because of the flexible distribution and reduction networks. There are two different dataflows enabling sparse compute in a Flex-DPE. The N-sta, M-str dataflow for Flex-DPE in Fig. 4d maps only non-zero elements onto the compute, giving it 100% stationary utilization, making it more efficient than the systolic array. However, the streaming matrix may send zerovalued elements. This is because all non-zero stationary elements are mapped if there is at least one streaming value that needs to be multiplied with it.
+
+稀疏的不规则矩阵。 图4d显示了稀疏不规则矩阵的映射方式。 收缩阵列不仅会因矩阵不规则而利用不足，而且会因稀疏性而遭受损失。 为了保持最终输出的正确性，脉动阵列必须将非零值映射到计算单元上。 该限制归因于PE之间的刚性转发网络。 由于灵活的分配和归约网络，Flex-DPE设计仅能够映射非零元素。 在Flex-DPE中，有两种不同的数据流可实现稀疏计算。 图4d中Flex-DPE的N-sta，M-str数据流仅将非零元素映射到计算上，使其具有100％的固定利用率，使其比脉动阵列更高效。 但是，流矩阵可以发送零值元素。 这是因为如果至少有一个流值需要与其相乘，则将映射所有非零固定元素。
+
+![20200902091437](https://raw.githubusercontent.com/milk2we/picgo/master/images/20200902091437.png)
+
+>Fig. 4e shows the N-str, M-str dataflow (i.e., No Local Reuse [10]) for the Flex-DPE that fully utilizes the compute. This is done by streaming only necessary multiplication pairs and not keeping any values stationary. We provide more details about the distribution and reduction network architecture that can enable this feature in Section IV. The equivalent dataflow is not possible for the systolic array as it does not allow arbitrary pairings of vectors from the M and N matrices due to its rigid cycle-by-cycle forwarding network.
+
+
+>Distribution and Reduction Latency. Another point to notice from the quantitative data in Fig. 4b-e is that the data loading and accumulation time in systolic arrays is always proportional to the array dimensions, while SIGMA’s networks allow O(1) distribution and O(log2N) reduction.
+
+分配和减少延迟。 从图4b-e中的定量数据中要注意的另一点是，收缩压阵列中的数据加载和累积时间始终与阵列尺寸成比例，而SIGMA的网络允许O（1）分布和O（log2N）减少。
+
+![20200902091721](https://raw.githubusercontent.com/milk2we/picgo/master/images/20200902091721.png)
+
+>Summary. Table I summarizes the sources of inefficiency in systolic arrays and how SIGMA addresses each. Architectural details are provided next.
+
+摘要。 表I总结了脉动阵列效率低下的原因以及SIGMA如何解决每个问题。 接下来提供建筑细节。
+
+![20200902091903](https://raw.githubusercontent.com/milk2we/picgo/master/images/20200902091903.png)
+
+>* IV. SIGMA ARCHITECTURE
+
+>The fundamental building block within SIGMA’s compute fabric is a processor named Flexible Dot Product Engine (Flex-DPE), described in Sec. IV-A. Several Flex-DPEs are connected together via a simple NoC to create the full SIGMA compute fabric. Each GEMM operation reserves a contiguous group of Flex-DPEs, creating a Flexible Dot Product Unit (Flex-DPU), described in Sec. IV-B. The memory-system is similar to the TPU [4], [23]. Fig. 8 depicts the high level schematic of SIGMA.
+
+SIGMA计算结构的基本组成部分是一个名为“ Flexible Dot Product Engine”（Flex-DPE）的处理器，如第 IV-A二节所述。 几个Flex-DPE通过简单的NoC连接在一起，以创建完整的SIGMA计算结构。 每个GEMM操作都会保留一组连续的Flex-DPE，以创建一个灵活的点产品单元（Flex-DPU），如第IV-B节所述。 该存储系统类似于TPU [4]，[23]。 图8描绘了高层次SIGMA的示意图。
+![20200902092724](https://raw.githubusercontent.com/milk2we/picgo/master/images/20200902092724.png)
+
+
+
+>A. Microarchitecture of Flex-DPE
+>A k-sized Flex-DPE houses k multipliers, k − 1 adders, local buffers, control unit, and flexible interconnects. The multipliers are laid out in a logical 1-D structure. Fig. 5 shows an overview. A 1D substrate enables us to run matrixmatrix (M*M) multiplications as multiple vector matrix multiplications (V*M), similar to Brainwave [14]. Recall from Fig. 4 that a k-sized square systolic array has √k columns and √ k rows, with each column computing an independent dot-product when running a weight [23] or inputstationary dataflow [37]. In contrast, a k-sized Flex-DPE can be configured to create myriad combinations of dot-products: one dot-product of size k, two dot-products of size k/2, √k dot-products of size √ k (like the systolic array), and so on. In fact, the flexible distribution and reduction networks also enable creation of multiple variable-sized dot-products, which is crucial for sparsity. In Sec. V, we study how the Flex-DPE scales with area and power.
+
+一个k大小的Flex-DPE包含k个乘法器，k-1个加法器，本地缓冲区，控制单元和灵活的互连。 乘法器以逻辑一维结构布置。 图5显示了概述。 一维底物使我们能够将矩阵矩阵（M * M）乘法作为多个矢量矩阵乘法（V * M）进行，类似于Brainwave [14]。 从图4回忆起，一个k大小的方形脉动阵列具有√k列和√k行，当运行权重[23]或输入平稳数据流[37]时，每列计算一个独立的点积。 相比之下，可以将k大小的Flex-DPE配置为创建多种点积组合：一个大小为k的点积，两个大小为k / 2的点积，√k大小为√k的点积（ 例如脉动阵列），等等。 实际上，灵活的分配和减少网络还可以创建多个可变大小的点产品，这对于稀疏至关重要。 在秒 V，我们研究Flex-DPE如何随面积和功率缩放。
+
+![20200902093202](https://raw.githubusercontent.com/milk2we/picgo/master/images/20200902093202.png)
+
+>1) Distribution Network: Benes Topology: The role of a distribution network within any GEMM engine is to load the stationary matrix (MN or KN), and stream the other matrix, as shown in Fig. 4. In a systolic array, the distribution network behavior is implemented via the horizontal and vertical forwarding links between PEs. This leads to an O(k) data loading time for a k ×k systolic array.
+
+1）分发网络：Benes拓扑：任何GEMM引擎中的分发网络的作用是加载固定矩阵（MN或KN），并传输另一个矩阵，如图4所示。 分布网络行为是通过PE之间的水平和垂直转发链路实现的。 这导致k×k脉动阵列的O（k）数据加载时间。
+
+>In SIGMA, we adopt a Benes network [7] to support the flexibility demonstrated in Fig. 4. Benes is a non-blocking N-input N-output multistage network with 2log(N)+1 levels, each with N tiny 2x2 switches. The switches, as shown in Fig. 5-Step(iv), require two control bits; one for selecting the vertical output and one for diagonal output. Numerous Benes routing algorithms have been proposed [7], [8], [29]. The non-blocking property of Benes allows any source to communicate with any destination without any intermediate contention. We use latch-free switches (except for timing closure) at each-stage, allowing a O(1) data communication across the Benes network. We also support multicasts within the Benes network to avoid having to read the same data element multiple times from SRAM.
+
+在SIGMA中，我们采用Benes网络[7]来支持图4所示的灵活性。Benes是具有2log（N）+1级的无阻塞N输入N输出多级网络，每个级都有N个2x2小型开关。 。 如图5-步骤（iv）所示，这些开关需要两个控制位。 一种用于选择垂直输出，另一种用于对角线输出。 已经提出了许多Benes路由算法[7]，[8]，[29]。 Benes的非阻塞属性允许任何源与任何目标进行通信，而无需任何中间争用。 我们在每个阶段都使用无闩锁开关（时序收敛除外），从而允许在Benes网络上进行O（1）数据通信。 我们还支持Benes网络中的多播，以避免必须多次从SRAM读取同一数据元素。
+
+![20200902100103](https://raw.githubusercontent.com/milk2we/picgo/master/images/20200902100103.png)
+
+>Fig. 5-Step(iv), require two control bits; one for selecting the vertical output and one for diagonal output. Numerous Benes routing algorithms have been proposed [7], [8], [29]. The non-blocking property of Benes allows any source to communicate with any destination without any intermediate contention. We use latch-free switches (except for timing closure) at each-stage, allowing a O(1) data communication across the Benes network. We also support multicasts within the Benes network to avoid having to read the same data element multiple times from SRAM.
+
+图5-步骤（iv），需要两个控制位； 一种用于选择垂直输出，另一种用于对角线输出。 已经提出了许多Benes路由算法[7]，[8]，[29]。 Benes的非阻塞属性允许任何源与任何目标进行通信，而无需任何中间争用。 我们在每个阶段都使用无闩锁开关（时序收敛除外），从而允许在Benes网络上进行O（1）数据通信。 我们还支持Benes网络中的多播，以避免必须多次从SRAM读取同一数据元素。
+
+>Other design-choices are also feasible for the distribution network. A crossbar gives the same non-blocking behavior as Benes and has much simpler routing, but it does not scale well (N2). Blocking interconnects such as buses [10], trees [11], [27], butterfly and mesh networks [9], are still valid design choices due to their low wire costs, but will cause performance degradation due to increased distribution delays.
+
+对于分配网，其他设计选择也是可行的。 交叉开关具有与Benes相同的非阻塞行为，并且布线简单得多，但伸缩性不佳（N2）。 诸如总线[10]，树[11]，[27]，蝶形和网状网络[9]之类的阻塞互连由于其较低的电线成本仍然是有效的设计选择，但由于分配延迟的增加会导致性能下降。
+
+> 2)Reduction Network: FAN Topology: Dot-product reduction can be implemented in three ways.
+>Spatio-Temporal Reduction: The TPU weight-stationary systolic array implementation performs reduction via forwarding along the column, requiring O(k)-cycles for a k×k array. The time taken is independent of the actual size m of the dot-product which may be smaller.
+还原网络：FAN拓扑：可以通过三种方式实现点产品还原。
+时空缩减：TPU重量平稳脉动阵列实现通过沿列转发进行缩减，对于k×k阵列需要O（k）个周期。 所花费的时间与点积的实际大小m无关，后者可能较小。
+
+>Temporal Reduction: Designs like EIE [19] perform inplace reduction within PEs. The time taken is still linear like spatio-temporal, but equal to O(m) - i.e., the dot-product size.
+时间减少：EIE等设计[19]在PE中执行原位减少。 所花费的时间仍然像时空一样是线性的，但是等于O（m）-即点积大小。
+
+>Spatial Reduction: In SIGMA, we implement a spatial tree-based reduction, as it requires O(log2m) cycles, for a m-sized dot-product. The challenge with realizing this log2mcycle reduction, however, is that non-powers of two sized reductions are hard to map over traditional binary adder trees. Suppose we are trying to accumulate three separate dot-products for (a0, a1, a2, b0, b1, c0, c1, c2) on an eightwide adder tree. Following the natural binary-tree topology, a2-b0 and b1-c0 will reach the same adder as they go up the tree, which is incorrect functionally.
+
+空间缩减：在SIGMA中，我们实现了基于空间树的缩减，因为它需要O（log2m）周期才能生成m尺寸的点积。 但是，实现这种log2mcycle减少的挑战在于，很难将传统的二进制加法器树映射成两次大小的非幂。 假设我们试图在一个八度加法器树上累积三个单独的点积（a0，a1，a2，b0，b1，c0，c1，c2）。 按照自然的二叉树拓扑结构，a2-b0和b1-c0到达树时将到达相同的加法器，这在功能上是不正确的。
+
+>FAN Topology. To address this issue, we propose a novel adder-tree topology named Forwarding Adder Network (FAN) that places forwarding links between different levels of adders over a traditional binary adder tree. The topology and variable labels of a 32-wide FAN are shown in Fig. 6a. VecIDs and adderIDs are numbered in increasing order from left to right, and each adderID has a corresponding adderLvl value. Below is a pseudocode describing the link connections between adders to create FAN of any power of 2 size.
+风扇拓扑。 为了解决这个问题，我们提出了一种新颖的加法树拓扑结构，称为转发加法器网络（FAN），该拓扑将转发链接放置在传统二进制加法器树上不同级别的加法器之间。 图6a中显示了32宽FAN的拓扑和变量标签。 VecID和adderID从左到右按递增顺序编号，并且每个adderID都有一个对应的adderLvl值。 下面是一个伪代码，描述加法器之间的链接连接，以创建任意大小为2的幂的FAN。
+![20200902100746](https://raw.githubusercontent.com/milk2we/picgo/master/images/20200902100746.png)
+
+>Routing Algorithm. The routing algorithm for FAN is shown in Fig. 6c. For every adder, if vecID[adderID] equals to vecID[adderID+1], accumulation is enabled. If the vecIDs are not equal and the adder is in the zeroth level, the bypass link is enabled. For example, in Fig. 6a, Adder 12 needs to bypass ‘c’ and ‘d’ to the next adder levels. From the second adder level onward, there is a N-to-2 mux before every FP32 Adder. To determine which inputs get selected, comparators are used to identify cluster regions.
+路由算法。 FAN的路由算法如图6c所示。 对于每个加法器，如果vecID [adderID]等于vecID [adderID + 1]，则启用累加。 如果vecID不相等且加法器处于零级，则启用旁路链接。 例如，在图6a中，加法器12需要绕过“ c”和“ d”到下一个加法器级别。 从第二个加法器级别开始，每个FP32加法器之前都有一个N至2多路复用器。 为了确定选择哪些输入，使用比较器来识别群集区域。
+![20200902101027](https://raw.githubusercontent.com/milk2we/picgo/master/images/20200902101027.png)
+
+>Benefits and Overhead. FAN offers similar benefits as the ART topology proposed in MAERI [27] in terms of creating dot-products of variable sizes. However, FAN is much more lightweight. This is because MAERI’s ART is built using three input adders (two from parent nodes, one from a sibling node), which makes it extremely prohibitive, especially when working with FP32 data type (commonly used during DNN training). Fig. 6b shows the performance evaluation between linear reduction (i.e., temporal or spatiotemporal), ART, and FAN. For performance calculations, we use 100 stationary folds (when stationary elements need to be replaced) with stream dimension of 1000 each. As shown in Fig. 6b-iii, taking logN cycles rather than N cycles before starting the next fold significantly improves performance as the number of PEs increases. Our findings show that 512PE FAN only has a 10% and 31% area power overhead over linear, compared to ART which has a 92% and 86% overhead respectively. FAN also provides EDP benefits over linear starting from 128-PE. At 512-PE, FAN’s EDP is 45% and 34% lower than linear and ART respectively. From our results, we conclude that FAN is both high performance and scalable.
+
+好处和开销。在创建可变大小的点积方面，FAN提供了与MAERI [27]中提出的ART拓扑相似的优势。但是，FAN更轻巧。这是因为MAERI的ART是使用三个输入加法器（两个来自父节点，一个来自同级节点）建立的，这使其具有极大的禁止性，尤其是在处理FP32数据类型（通常在DNN训练期间使用）时。图6b示出了线性减少（即，时间或时空），ART和FAN之间的性能评估。对于性能计算，我们使用100个固定折痕（需要更换固定元件时），每个折痕尺寸为1000。如图6b-iii所示，随着PE数量的增加，在开始下一个折叠之前采取logN个周期而不是N个周期可以显着提高性能。我们的研究结果表明，相比于ART，512PE FAN的线性开销分别只有10％和31％，而ART的开销分别为92％和86％。与从128-PE开始的线性相比，FAN还具有EDP的优势。在512-PE的情况下，FAN的EDP分别比线性和ART低45％和34％。根据我们的结果，我们得出结论FAN具有高性能和可扩展性。
+![20200902101214](https://raw.githubusercontent.com/milk2we/picgo/master/images/20200902101214.png)
+
+>3) Execution within Flex-DPE: The Flex-DPE design allows mapping for dense or sparse, and regular or irregular GEMMs. In Fig. 4, we have seen how different combinations of matrices are mapped onto Flex-DPE. Fig. 5 depicts the steps involved in generating the mapping for sparse matrices which we will describe later.
+
+在Flex-DPE中执行：Flex-DPE设计允许映射密集或稀疏，规则或不规则的GEMM。 在图4中，我们看到了矩阵的不同组合是如何映射到Flex-DPE上的。 图5描述了生成稀疏矩阵映射所涉及的步骤，我们将在后面描述。
+
+>B. Composing Flex-DPEs into a Flex-DPU using a NoC
+
+>To extract maximum possible parallelism from the available multipliers, SIGMA can dynamically compose a number of Flex-DPE units together to form a logical ensemble which we call Flex-DPU. A Flex-DPU is responsible for running one GEMM. Multiple Flex-DPUs can be scheduled in parallel to run multiple GEMMs. The NoC connecting the Flex-DPEs together is similar to that of tiled accelerator architectures, such as Tangram [16] and Simba [39].
+为了从可用的乘法器中提取最大可能的并行度，SIGMA可以将多个Flex-DPE单元动态组合在一起，形成一个逻辑集合，我们称之为Flex-DPU。 一个Flex-DPU负责运行一个GEMM。 可以并行调度多个Flex-DPU，以运行多个GEMM。 将Flex-DPE连接在一起的NoC类似于诸如Tangram [16]和Simba [39]的平铺加速器体系结构。
+
+
+>A simple switch is present at the intersection of each Flex-DPE to arbitrate the flow of the data. These switches are connected together in a 2D mesh. They are statically configured when mapping the GEMMs, and do not require any dynamic routing or flow-control like conventional NoCs. The amount of bandwidth on this NoC (i.e., number of unique elements of the row/column that can be transferred per-cycle) is a design-time configurable parameter.
+
+每个Flex-DPE的交集处都有一个简单的开关，用于仲裁数据流。 这些开关以2D网格连接在一起。 它们在映射GEMM时是静态配置的，并且不需要像常规NoC一样的任何动态路由或流控制。 此NoC上的带宽量（即每个周期可以传输的行/列的唯一元素数）是设计时可配置的参数。
+
+>Within a Flex-DPU, the switch forwards data across FlexDPEs, providing seemless multicasts of data like a bus. We describe this with an example in Sec. IV-E. Across FlexDPUs, the switches provide hop-by-hop data forwarding, similar conventional NoCs. 
+在Flex-DPU中，交换机在FlexDPE之间转发数据，从而像总线一样提供数据的多播。 我们在第二节中用一个例子来描述。 我有。 跨FlexDPU，这些交换机提供逐跳数据转发，类似于传统的NoC。 
+
+>C. Supporting Unstructured Sparsity
+>Compression Format. One of the key benefits of supporting sparsity is low-memory footprint; and consequently more energy savings by avoiding zero-valued element transfers. There are a few well recognized compression formats such as CSC, CSR, COO, and RLC (Run-length compression). We use a Bitmap format within SIGMA, where each element has a corresponding bit to indicate if a given element is zero or non-zero in the corresponding matrix [17], [24], [35], [36]. Fig. 7 compares the metadata overhead of various compression formats with varying levels of sparsity. The dimensions and sparsity levels in the plot reflect what we observe in our workloads (see Sec. II). The metadata overhead for COO/ CSR/ CSC changes drastically at various sparsity regions. This is because each nonzero element require indices of log2(dimension) bits, etc. The Bitmap format has a constant meta-data overhead irrespective of sparsity, making it attractive for SIGMA which targets arbitrary unstructured sparsity. At low-levels of sparsity, we find Bitmap having lower footprint than COO/ CSR/ CSC. Bitmap has comparable overhead to RLC [10], [19], at sparse ratio of ∼30% to ∼70%. We observe that RLC is better at reducing meta-data over Bitmap at >∼70% sparsity, but is worse at <∼30% sparsity. We evaluate RLC using 4-bit (RLC-4) and 2-bit (RLC-2) run lengths. Alternate compression formats can be supported over SIGMA by only changing the front end controller to ensure proper mapping.
+
+压缩格式。支持稀疏性的主要好处之一是内存不足。避免零值元素转移，从而节省更多能源。有一些公认的压缩格式，例如CSC，CSR，COO和RLC（行程压缩）。我们在SIGMA中使用位图格式，其中每个元素都有一个对应的位来指示给定元素在对应的矩阵[17]，[24]，[35]，[36]中是零还是非零。图7比较了具有不同稀疏性级别的各种压缩格式的元数据开销。图中的维度和稀疏度反映了我们在工作负载中观察到的情况（请参见第二节）。在各种稀疏区域中，COO / CSR / CSC的元数据开销会急剧变化。这是因为每个非零元素都需要log2（维）位的索引，等等。位图格式具有不变的元数据开销，而与稀疏性无关，这使其对以任意非结构化稀疏性为目标的SIGMA有吸引力。在稀疏性较低的级别，我们发现位图的占用空间比COO / CSR / CSC低。位图的稀疏率为〜30％到〜70％，其开销可与RLC [10]，[19]相比。我们观察到，RLC在稀疏度大于70％时比Bitmap更好地减少元数据，而在稀疏度小于30％时更差。我们使用4位（RLC-4）和2位（RLC-2）游程长度评估RLC。只需更改前端控制器以确保正确的映射，即可在SIGMA上支持其他压缩格式。
+
+
+>Sparsity Controller. For each GEMM, a global controller determines how sparse matrices are decoded and mapped onto SIGMA. The controller operates on the bitmap metadata and calculates how many Flex-DPEs are needed. Internal counters and tables are implemented to determine the indices where dense computations are needed. We describe the details with a walkthrough example in Sec. IV-E.
+
+稀疏控制器。 对于每个GEMM，全局控制器确定稀疏矩阵如何解码并映射到SIGMA。 控制器对位图元数据进行操作，并计算需要多少个Flex-DPE。 内部计数器和表用于确定需要密集计算的索引。 我们在Sec中通过演练示例来描述细节。
+
+>D. Dataflows Supported by SIGMA
+
+>SIGMA’s flexible substrate enables it to support myriad dataflows. For all workloads, we use both Weight (i.e., KN) stationary and Input (i.e., MK) stationary dataflows (Fig. 4d), and pick the one that provides higher efficiency. In these two dataflows, spatial dot-products of dynamic size are created depending on the matrix dimensions and sparsity of the stationary matrix. The columns/rows of the streaming matrix are reused spatially by broadcasting to the rows/columns of the stationary matrix (which are reused temporally at each multiplier). SIGMA can also run a No Local Reuse (i.e., MN-str, KN-str dataflow from Fig. 4e). This dataflow can provide 100% utilization of the compute, but comes at the cost of requiring higher interconnect bandwidth.
+SIGMA的柔性基板可支持多种数据流。 对于所有工作负载，我们同时使用权重（即KN）固定数据流和输入（即MK）固定数据流（图4d），并选择能提供更高效率的数据流。 在这两个数据流中，根据矩阵尺寸和固定矩阵的稀疏性创建动态大小的空间点积。 流媒体矩阵的列/行通过广播到固定矩阵的行/列在空间上被重用（在每个乘法器上时间上被重用）。 SIGMA还可以运行“无本地重用”（即，图4e中的MN-str，KN-str数据流）。 此数据流可以提供100％的计算利用率，但以需要更高的互连带宽为代价。
+![20200902101552](https://raw.githubusercontent.com/milk2we/picgo/master/images/20200902101552.png)
+
+>E. Walkthrough Example
+>The following steps (corresponding to Fig. 5) depicts a walk-through example showing how SIGMA utilizes the bitmap format to map sparse GEMMs onto Flex-DPEs. Here, the number of multipliers per Flex-DPE (Nmult) is four.
+>•	Step i) Gather two bitmap-compressed matrices. In this example, MK is stationary and KN is streaming.
+>•	Step ii) Conduct row-wise OR across the streaming bitmap and store the outputs to REGOR (temporary registers). Then, do element-wise AND between the corresponding REGOR row and stationary bitmap column to generate stationary’ bitmap.
+>•	Step iii) The number of ones in stationary’ bitmap corresponds to the number of useful stationary value (Nstat). Since Nstat is 8 and Nmult is 4 in this example, 2-Flex-DPE units are needed to form a single Flex-DPU.
+>•	Step iv) Unicast the stationary values to the multiplier buffers. The routing is straightforward, as all stationary input data travel vertically down. In this example, the input bus has a 4X bandwidth, so it is only able to fill one Flex-DPE each cycle.
+>•	Step v) To generate source and destination pairs for each Flex-DPE, a counter value is assigned to each non-zero element in the stationary’ and streaming bitmaps. For stationary’ bitmap, the counter starts at 0 and increments from left-right, top-bottom. The counter resets when it reaches Nmult -1, which marks the end of one Flex-DPE. Counter values increments top-bottom in the streaming bitmap and resets at the start of each column. Then, a streaming bitmap column compares to each row of the corresponding stationary’ bitmap. If both values are 1, the counter values are stored in the Flex-DPE SRC-DEST tables. The row-id is recorded to determine partial sum regions. Additionally, an initial output bitmap is generated based on if there are any non-zero computations.
+>•	Step vi) Generate distribution routing bits base on the SRC-DEST table entries. For this example, a naive routing algorithm with limited functionality is to subtract the src-index with the dest-index. Other routing algorithms have been proposed [7], [8].
+>•	Step vii) Finally, the streaming values are broadcasted to all Flex-DPEs within a Flex-DPU from the routing bits calculated in Step vi. For reduction, the accumulation ID is processed and then used as the vecID in FAN, described in Section IV-A2. Multicasts, multiplications, and reductions are all happening in a pipelined fashion. Once all the columns have been streamed in and outputs are generated, the Flex-DPE units are freed up to be utilized for another GEMM operation.
+
+以下步骤（对应于图5）描绘了一个演练示例，该示例显示了SIGMA如何利用位图格式将稀疏的GEMM映射到Flex-DPE上。在此，每个Flex-DPE（Nmult）的乘法器数量为四个。
+>•步骤i）收集两个位图压缩的矩阵。在此示例中，MK是固定的，而KN是流式的。
+>•步骤ii）跨流位图进行逐行或运算，并将输出存储到REGOR（临时寄存器）。然后，在相应的REGOR行和固定位图列之间进行逐元素AND生成固定位图。
+>•步骤iii）固定位图中的位数等于有效固定值（Nstat）的数量。由于在此示例中Nstat为8，Nmult为4，因此需要2-Flex-DPE单元来形成单个Flex-DPU。
+>•步骤iv）将固定值单播到乘法器缓冲区。路由很简单，因为所有固定输入数据都是垂直向下传播的。在此示例中，输入总线的带宽为4倍，因此每个周期只能填充一个Flex-DPE。
+>•步骤v）为了为每个Flex-DPE生成源对和目标对，将计数器值分配给固定位图和流式位图中的每个非零元素。对于固定的位图，计数器从0开始，从左上右下递增。当计数器达到Nmult -1（表示一个Flex-DPE结束）时，计数器将重置。计数器值在流式位图中从上到下递增，并在每列的开头重置。然后，流式位图列会与相应固定式位图的每一行进行比较。如果两个值均为1，则计数器值存储在Flex-DPE SRC-DEST表中。记录行标识以确定部分和区域。另外，基于是否存在任何非零计算来生成初始输出位图。
+>•步骤vi）根据SRC-DEST表条目生成分发路由位。对于此示例，功能有限的朴素路由算法是用dest-index减去src-index。已经提出了其他路由算法[7]，[8]。
+>•步骤vii）最后，将流值从步骤vi中计算出的路由位广播到Flex-DPU中的所有Flex-DPE。为了进行减少，处理累积ID，然后将其用作FAN中的vecID，如第IV-A2节所述。多播，乘法和归约都是以流水线方式发生的。一旦所有的列都被流化并生成了输出，就释放了Flex-DPE单元以用于另一GEMM操作。
+
+>V. IMPLEMENTATION
+> Fig. 8 compares the post place-and-routed area and power of a 128×128 systolic array versus SIGMA with 128 Flex-DPEs, each of size 128. Both designs have identical input bandwidth of 128 words per cycle from SRAM. SIGMA’s key overheads are the highly flexible, non-blocking distribution and reduction networks that lead to a 37.7% area overhead. However, the performance speedups provided by SIGMA (shown later in Sec. VI-C) lead to an average 3.2× improvement in Effective TFLOPs/ Watt. We expect a further power performance gain of 7× when scaling from a 28nm design to a 12nm design. This is based on FP32 FLOPs growth between NVIDIA K20X to NVIDIA T4 where compute grew by ∼2× while power reduced by ∼3.5×. SIGMA is pipelined at 1-cycle distribution, 1-cycle multiplication, and 1-cycle for each level of reduction. The critical path for SIGMA is the distribution, but it is possible to match the maximum operating frequency of TPU by pipelining the distribution further so that the new critical path becomes the FP compute. Additionally, we estimate a global controller with 1024 AND gates, 1024 OR gates, 1024 counters, and 128 SRC-DEST tables to consume approximately 1.4mm2.
+
+图8比较了128×128脉动阵列与SIGMA与128个Flex-DPE（每个大小为128）的后期布局和布线面积以及功率。两种设计在SRAM中每个周期具有相同的128字输入带宽。 SIGMA的主要间接费用是高度灵活，无阻塞的分销和减少网络，可导致37.7％的区域间接费用。但是，SIGMA提供的性能提升（稍后在VI-C节中显示）导致有效TFLOP / Watt平均提高3.2倍。从28nm设计扩展到12nm设计时，我们预计功率性能将进一步提高7倍。这基于NVIDIA K20X和NVIDIA T4之间的FP32 FLOP增长，其中计算增长了约2倍，而功耗却下降了约3.5倍。 SIGMA以1周期分布，1周期乘法和1周期降级的方式进行流水线传输。 SIGMA的关键路径是分布，但是可以通过进一步流水分布来匹配TPU的最大工作频率，从而使新的关键路径成为FP计算。此外，我们估计具有1024个AND门，1024个OR门，1024个计数器和128个SRC-DEST表的全局控制器消耗约1.4mm2的空间。
+![20200902102006](https://raw.githubusercontent.com/milk2we/picgo/master/images/20200902102006.png)
+
+>For 16384 total PEs, we performed a design-space exploration for sizing Flex-DPE units to find the most energy and area efficient configuration. Fig. 9 depicts that a Flex-DPE of size 128 Flex-DPE consumes the least energy, while a Flex-DPE size of 512 is the most area efficient. We decide to use Flex-DPE-128 to match the per-cycle SRAM read bandwidth of the TPU.
+
+对于总共16384个PE，我们进行了设计空间探索，以调整Flex-DPE单元的尺寸，以找到最节能和最省电的配置。 图9描绘了大小为128的Flex-DPE消耗的能量最少，而大小为512的Flex-DPE的区域效率最高。 我们决定使用Flex-DPE-128来匹配TPU的每周期SRAM读取带宽。
+![20200902102024](https://raw.githubusercontent.com/milk2we/picgo/master/images/20200902102024.png)
+
+>VI. EVALUATION
+>A. Methodology
+>Target GEMMs. We use GEMM dimensions and sparsity observed during training of GNMT, Transformer, NCF and DeepBench models (described earlier in Sec. II). Input and weight sparsity were observed to be ∼10-50% and ∼80%.
+
+A.方法论
+目标GEMM。 我们使用在GNMT，Transformer，NCF和DeepBench模型训练中观察到的GEMM尺寸和稀疏度（在第二节中已有介绍）。 输入和重量稀疏度分别为〜10-50％和〜80％。
+
+>Baseline Accelerators. We compare SIGMA against other state-of-the-art accelerators: TPU [4], EIE [19], SCNN [33], OuterSPACE [32], Eyeriss v2 [11], Packed Systolic [26], and Cambricon-X [47]. We scale the number of PEs to a constant number of 16384 in all designs. SIGMA assumes 128 FlexDPEs, each with 128 MACs, and input SRAM bandwidth of 128x (number of unique data elements that can be distributed). For our evaluations, we allow greater input bandwidth to distribute larger chunks of the streaming matrix in one cycle. For sparsity performance, all combinations of matrices and sparsity were tested and then averaged. Most of the sparse accelerators were designed for inference and specialized for convolutions; we extended them to run GEMMs by setting equal input and filter dimensions.
+
+基准加速器。 我们将SIGMA与其他最新的加速器进行了比较：TPU [4]，EIE [19]，SCNN [33]，OuterSPACE [32]，Eyriss v2 [11]，Packed Systolic [26]和Cambricon-X [47]。 在所有设计中，我们将PE的数量扩展到恒定的16384。 SIGMA假定有128个FlexDPE，每个都有128个MAC，输入SRAM带宽为128x（可以分配的唯一数据元素的数量）。 为了进行评估，我们允许更大的输入带宽在一个周期内分配更大的流矩阵块。 对于稀疏性能，对矩阵和稀疏性的所有组合进行了测试，然后取平均值。 大多数稀疏加速器是为推理而设计的，专门用于卷积。 我们通过设置相等的输入和过滤器尺寸来扩展它们以运行GEMM。
+
+>Simulation Infrastructure. To evaluate the performance of SIGMA and other baselines, we developed a cycle-accurate analytic model. The model evaluates the performance based on the number of compute units, buffers per compute unit, interconnect topology, input bandwidth, and dataflow. The TPU was modeled using SCALE-sim [37].
+
+仿真基础架构。 为了评估SIGMA和其他基准的性能，我们开发了一个周期精确的分析模型。 该模型基于计算单元的数量，每个计算单元的缓冲区，互连拓扑，输入带宽和数据流来评估性能。 使用SCALE-sim [37]对TPU进行建模。
+
+>Comparison Metrics. Table II defines comparison metrics we use across our evaluation graphs.
+比较指标。 表II定义了我们在评估图中使用的比较指标。
+![20200902101903](https://raw.githubusercontent.com/milk2we/picgo/master/images/20200902101903.png)
+
+
+>B. Characterizing SIGMA’s Features
+>We start by characterizing the benefits of the various features of SIGMA to help pick the optimal design-point.
+>Dataflow Comparison Fig. 10 demonstrates the impact of dataflows when running a suite of representative GEMMs. We observe that the MK-str,KN-str dataflow, while being ideal in terms of no wasted computations, suffers in overall latency. This is because it requires extremely high bandwidth (thus serialization), due to no reuse within the Flex-DPE. For the other two dataflows, the stationary matrix maps only non-zeros, getting 100% utilization, and the overall efficiency gets determined by the sparsity of the streaming matrix. In our evaluations, we run both dataflows and report the higher performing dataflow.
+
+>Benefits of SIGMA’s features Fig. 11 revisits the discussion from Sec. III-C and quantitatively demonstrates the benefits of SIGMA’s three key features in comparison to systolic arrays: dot-products within Flex-DPEs, (ii) scalable interconnects, namely, Benes and FAN, providing O(1) and O(log2N) distribution and reduction time respectively, and (iii) sparsity support to map only useful non-zero data.
+
+>For sparse irregular GEMMs, TPU is required to map all elements stationary, while SIGMA maps only the nonzeros stationary. With sparsity support, SIGMA shows 100% stationary utilization. Due to increased utilization and compute efficiency, fewer cycles are needed to load and reduce data. Fig. 11 shows two versions of sparse irregular GEMMs. The M-str,N-sta example is dominated by streaming latency because the larger matrix is being streamed in, while the loading latency dominates in M-sta,N-str because the larger matrix is held stationary and leads to more folding iterations. The compute efficiency for M-sta,N-str is significantly higher because the sparser matrix is held stationary.
+
+>C. Performance and Energy versus TPU
+>Speedup. Fig. 12a and Fig. 12b evaluate dense and sparse GEMMs performance respectively. In Fig. 12a, we use three aspect ratios for the TPU. For e.g., 512×32 have 512 rows, each of which can read a data element per cycle. Either the MK or KN matrix is kept stationary. For the 2048-4096-32 GEMM, a K dimension of 32 leads to under-utilization in the 128×128 and 256×64 TPUs, but aligns with the columns of the 512×32 TPU, giving a huge performance jump. SIGMA, due to its flexibility, experiences a similar jump. The TPU overall efficiency drops steeply while operating a 1024-16-500000 sized GEMM. If a square-shaped TPU maps the KN (500000-16) matrix stationary, the low value of N leads to a 87.5% decrease in utilization. If it decides to map MK (1024-500000) stationary, numerous folds are required since there are only 16K PEs, leading to a large amount of O(N) reductions. SIGMA accelerates this GEMM by creating flexible dimensions and leveraging its O(logN) reduction structure as described in Table I. In SIGMA, the overall efficiency is close to 100% throughout, except for small GEMMs (such as 2048-1-128), where smaller sizes cause loading latency from limited bandwidth to dominate. On average, SIGMA provides speedup of 2x over TPUs on dense GEMMs, stemming from higher utilization and faster reduction. This results to an overall average efficiency of 82% compared to 59% in the TPU. In Fig. 12b we run GEMMs with varying sparsity over SIGMA. We observe that there is a roughly 6× improvement over TPU, which suffers from an average overall efficiency of less than 10% due to the mapped zeros. SIGMA maps no zeros and shows an average overall efficiency of 40%, which gets limited by the sparsity of the streaming matrix.
+
+>Energy. 
+In Fig. 13 we see that SIGMA is on an average 3× more energy efficient and 5× more area efficient than TPU for sparse workloads. Despite SIGMA consuming twice as much power (Fig. 8), the energy benefit comes from ∼6× speedup. With more sparsity induced in future workloads, we expect energy gains to be significantly more.
+
+>D. Performance against Sparse Accelerators
+>Fig. 14 presents the speedup of SIGMA over state-ofthe-art sparse accelerators. The key inefficiencies in other accelerators are presented in Table III. Of all the sparse accelerators, SIGMA is the only one that can support full spatial-reduction with arbitrary sized dot-products. For two GEMMs, we find SIGMA slower than Eyeriss v2 since the latter can buffer both operands in its local SRAM for further reuse, while SIGMA keeps only one operand stationary, and has to stream the other multiple times (even if it will be reused in future). Other designs like EIE also have local SRAM buffers, but we observe that its inter-PE communication bottleneck overshadows the memory benefits. On average, we observe SIGMA performing 3X faster than the other sparse accelerators. We tested four combinations between the matrices and sparsity level and selected the best performing one for each accelerator.
+
+>VII. RELATED WORK
+>Training. A few prior works address training on dense matrices. Pipelayer [40] and Neurocube [25] proposes ReRAM based acceleration, but does not address scalability and sparsity. Hypar [41] addresses the scaling problem in training and proposes optimal techniques to extract parallelism. Schuiki et al. [38] and Liu et al. [30] propose processing in memory approaches to combat the communication problem when scaling training. ScaleDEEP architecture was developed to target DNN training, and consists of many processing tiles with specialized memory subsystem and interconnect [44]. However none of these methods simultaneously address the irregularity, sparsity, and scalability as SIGMA does.
+
+>Sparsity. Table III contrasts SIGMA against state-ofthe-art sparse accelerators. Other recent designs include PermDNN [13], which uses permuted diagonal matrices for inference on structured sparse DNN models. Other designs like UCNN [21] exploits sparsity and weight repetition by reusing dot products. ExTensor [22] finds intersections within compressed representations, and only operates on useful dense computations. Bit-tactical [12] targets sparsity in inference by skipping zero weights and exploiting bit level sparsity of inputs. Unlike SIGMA, Bit-tactical leverages scheduling in software to align inputs and weights. SparseReRAM [46] proposes using small operation units to exploit both weight and activation sparsity in ReRAMs. SIGMA targets acceleration of GEMMs with unstructured sparsity.
+
+>Flexibile Interconnects. Eyeriss [10] proposes an efficient dataflow for leveraging convolutional reuse with reconfigurable buses. MAERI [27] uses tree-based interconnects for distribution and reduction which inspired the 1D FlexDPE microarchitecture in SIGMA. However, MAERI does not handle dynamic weight and activation sparsity, and is optimized for low-precision CNNs rather than high-precision GEMMs commonly used during DNN training. Eyeriss v2 [11] also uses a specialized NoC to handle sparsity, but is optimized for small mobile CNNs rather than large GEMMs.
+
+>VIII. CONCLUSION
+>The paper proposes SIGMA as an accelerator to handle emerging large, sparse, and irregular GEMMs. SIGMA provides close to 100% compute utilization via high-bandwidth non-blocking interconnect structures. The overhead for such flexibility is carefully analyzed via a place-and-routed design. Our implementation shows 5.7× performance speedup over TPU designs for sparse irregular workloads. We also observe a 3× performance speedup over other state-of-the-art sparse accelerators. Reference RTL: https://github.com/georgia-tech-synergy-lab/SIGMA
+
+
+
+
+
+
