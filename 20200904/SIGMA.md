@@ -41,6 +41,7 @@ DL训练过程非常耗费计算资源。 OpenAI研究[6]中阐明了这一点�
 >is extremely compute-intensive 极度的消耗计算资源
 
 >The core compute component of DL training (and inference) is the GEMM operation [1]. Fig. 1a shows the GEMM dimensions (M, N, K) and operation; while Fig. 1b shows example dimensions found in modern DL workloads. During forward pass, DNNs with fully-connected (FC) layers and multilayer perceptron (MLPs) naturally map to GEMM operations, with MK representing inputs and KN representing weights. For Convolutional Neural Networks (CNNs), GPUs remap the conv operation into a GEMM via the Im2Col operation [18] or other efficient ordering operations. During the backward pass, two GEMM operations arise: MN x (KN)T and (MK)T x MN for computing the error gradient w.r.t inputs and weights respectively.
+
 ![20200830173146](https://raw.githubusercontent.com/milk2we/picgo/master/images/20200830173146.png)
 
 DL训练（和推理）的核心计算组件是GEMM操作[1]。 图1a显示了GEMM尺寸（M，N，K）和操作。 图1b显示了在现代DL工作负载中发现的示例维度。 在前向传递过程中，具有全连接层（FC）和多层感知器（MLP）的DNN自然映射到GEMM操作，其中MK代表输入，KN代表权重。 对于卷积神经网络（CNN），GPU通过Im2Col操作[18]或其他有效的排序操作将conv操作重新映射为GEMM。 在反向传播期间，出现两个GEMM操作：MN x（KN）T和（MK）T x MN，分别用于计算误差梯度w.r.t输入和权重。
@@ -251,6 +252,7 @@ C. GEMMs on Systolic Arrays vs. SIGMA
 >The fundamental building block within SIGMA’s compute fabric is a processor named Flexible Dot Product Engine (Flex-DPE), described in Sec. IV-A. Several Flex-DPEs are connected together via a simple NoC to create the full SIGMA compute fabric. Each GEMM operation reserves a contiguous group of Flex-DPEs, creating a Flexible Dot Product Unit (Flex-DPU), described in Sec. IV-B. The memory-system is similar to the TPU [4], [23]. Fig. 8 depicts the high level schematic of SIGMA.
 
 SIGMA计算结构的基本组成部分是一个名为“ Flexible Dot Product Engine”（Flex-DPE）的处理器，如第 IV-A二节所述。 几个Flex-DPE通过简单的NoC连接在一起，以创建完整的SIGMA计算结构。 每个GEMM操作都会保留一组连续的Flex-DPE，以创建一个灵活的点产品单元（Flex-DPU），如第IV-B节所述。 该存储系统类似于TPU [4]，[23]。 图8描绘了高层次SIGMA的示意图。
+
 ![20200902092724](https://raw.githubusercontent.com/milk2we/picgo/master/images/20200902092724.png)
 
 
@@ -294,15 +296,18 @@ SIGMA计算结构的基本组成部分是一个名为“ Flexible Dot Product En
 
 >FAN Topology. To address this issue, we propose a novel adder-tree topology named Forwarding Adder Network (FAN) that places forwarding links between different levels of adders over a traditional binary adder tree. The topology and variable labels of a 32-wide FAN are shown in Fig. 6a. VecIDs and adderIDs are numbered in increasing order from left to right, and each adderID has a corresponding adderLvl value. Below is a pseudocode describing the link connections between adders to create FAN of any power of 2 size.
 风扇拓扑。 为了解决这个问题，我们提出了一种新颖的加法树拓扑结构，称为转发加法器网络（FAN），该拓扑将转发链接放置在传统二进制加法器树上不同级别的加法器之间。 图6a中显示了32宽FAN的拓扑和变量标签。 VecID和adderID从左到右按递增顺序编号，并且每个adderID都有一个对应的adderLvl值。 下面是一个伪代码，描述加法器之间的链接连接，以创建任意大小为2的幂的FAN。
+
 ![20200902100746](https://raw.githubusercontent.com/milk2we/picgo/master/images/20200902100746.png)
 
 >Routing Algorithm. The routing algorithm for FAN is shown in Fig. 6c. For every adder, if vecID[adderID] equals to vecID[adderID+1], accumulation is enabled. If the vecIDs are not equal and the adder is in the zeroth level, the bypass link is enabled. For example, in Fig. 6a, Adder 12 needs to bypass ‘c’ and ‘d’ to the next adder levels. From the second adder level onward, there is a N-to-2 mux before every FP32 Adder. To determine which inputs get selected, comparators are used to identify cluster regions.
 路由算法。 FAN的路由算法如图6c所示。 对于每个加法器，如果vecID [adderID]等于vecID [adderID + 1]，则启用累加。 如果vecID不相等且加法器处于零级，则启用旁路链接。 例如，在图6a中，加法器12需要绕过“ c”和“ d”到下一个加法器级别。 从第二个加法器级别开始，每个FP32加法器之前都有一个N至2多路复用器。 为了确定选择哪些输入，使用比较器来识别群集区域。
+
 ![20200902101027](https://raw.githubusercontent.com/milk2we/picgo/master/images/20200902101027.png)
 
 >Benefits and Overhead. FAN offers similar benefits as the ART topology proposed in MAERI [27] in terms of creating dot-products of variable sizes. However, FAN is much more lightweight. This is because MAERI’s ART is built using three input adders (two from parent nodes, one from a sibling node), which makes it extremely prohibitive, especially when working with FP32 data type (commonly used during DNN training). Fig. 6b shows the performance evaluation between linear reduction (i.e., temporal or spatiotemporal), ART, and FAN. For performance calculations, we use 100 stationary folds (when stationary elements need to be replaced) with stream dimension of 1000 each. As shown in Fig. 6b-iii, taking logN cycles rather than N cycles before starting the next fold significantly improves performance as the number of PEs increases. Our findings show that 512PE FAN only has a 10% and 31% area power overhead over linear, compared to ART which has a 92% and 86% overhead respectively. FAN also provides EDP benefits over linear starting from 128-PE. At 512-PE, FAN’s EDP is 45% and 34% lower than linear and ART respectively. From our results, we conclude that FAN is both high performance and scalable.
 
 好处和开销。在创建可变大小的点积方面，FAN提供了与MAERI [27]中提出的ART拓扑相似的优势。但是，FAN更轻巧。这是因为MAERI的ART是使用三个输入加法器（两个来自父节点，一个来自同级节点）建立的，这使其具有极大的禁止性，尤其是在处理FP32数据类型（通常在DNN训练期间使用）时。图6b示出了线性减少（即，时间或时空），ART和FAN之间的性能评估。对于性能计算，我们使用100个固定折痕（需要更换固定元件时），每个折痕尺寸为1000。如图6b-iii所示，随着PE数量的增加，在开始下一个折叠之前采取logN个周期而不是N个周期可以显着提高性能。我们的研究结果表明，相比于ART，512PE FAN的线性开销分别只有10％和31％，而ART的开销分别为92％和86％。与从128-PE开始的线性相比，FAN还具有EDP的优势。在512-PE的情况下，FAN的EDP分别比线性和ART低45％和34％。根据我们的结果，我们得出结论FAN具有高性能和可扩展性。
+
 ![20200902101214](https://raw.githubusercontent.com/milk2we/picgo/master/images/20200902101214.png)
 
 >3) Execution within Flex-DPE: The Flex-DPE design allows mapping for dense or sparse, and regular or irregular GEMMs. In Fig. 4, we have seen how different combinations of matrices are mapped onto Flex-DPE. Fig. 5 depicts the steps involved in generating the mapping for sparse matrices which we will describe later.
@@ -336,6 +341,7 @@ SIGMA计算结构的基本组成部分是一个名为“ Flexible Dot Product En
 
 >SIGMA’s flexible substrate enables it to support myriad dataflows. For all workloads, we use both Weight (i.e., KN) stationary and Input (i.e., MK) stationary dataflows (Fig. 4d), and pick the one that provides higher efficiency. In these two dataflows, spatial dot-products of dynamic size are created depending on the matrix dimensions and sparsity of the stationary matrix. The columns/rows of the streaming matrix are reused spatially by broadcasting to the rows/columns of the stationary matrix (which are reused temporally at each multiplier). SIGMA can also run a No Local Reuse (i.e., MN-str, KN-str dataflow from Fig. 4e). This dataflow can provide 100% utilization of the compute, but comes at the cost of requiring higher interconnect bandwidth.
 SIGMA的柔性基板可支持多种数据流。 对于所有工作负载，我们同时使用权重（即KN）固定数据流和输入（即MK）固定数据流（图4d），并选择能提供更高效率的数据流。 在这两个数据流中，根据矩阵尺寸和固定矩阵的稀疏性创建动态大小的空间点积。 流媒体矩阵的列/行通过广播到固定矩阵的行/列在空间上被重用（在每个乘法器上时间上被重用）。 SIGMA还可以运行“无本地重用”（即，图4e中的MN-str，KN-str数据流）。 此数据流可以提供100％的计算利用率，但以需要更高的互连带宽为代价。
+
 ![20200902101552](https://raw.githubusercontent.com/milk2we/picgo/master/images/20200902101552.png)
 
 >E. Walkthrough Example
@@ -361,11 +367,13 @@ SIGMA的柔性基板可支持多种数据流。 对于所有工作负载，我�
 > Fig. 8 compares the post place-and-routed area and power of a 128×128 systolic array versus SIGMA with 128 Flex-DPEs, each of size 128. Both designs have identical input bandwidth of 128 words per cycle from SRAM. SIGMA’s key overheads are the highly flexible, non-blocking distribution and reduction networks that lead to a 37.7% area overhead. However, the performance speedups provided by SIGMA (shown later in Sec. VI-C) lead to an average 3.2× improvement in Effective TFLOPs/ Watt. We expect a further power performance gain of 7× when scaling from a 28nm design to a 12nm design. This is based on FP32 FLOPs growth between NVIDIA K20X to NVIDIA T4 where compute grew by ∼2× while power reduced by ∼3.5×. SIGMA is pipelined at 1-cycle distribution, 1-cycle multiplication, and 1-cycle for each level of reduction. The critical path for SIGMA is the distribution, but it is possible to match the maximum operating frequency of TPU by pipelining the distribution further so that the new critical path becomes the FP compute. Additionally, we estimate a global controller with 1024 AND gates, 1024 OR gates, 1024 counters, and 128 SRC-DEST tables to consume approximately 1.4mm2.
 
 图8比较了128×128脉动阵列与SIGMA与128个Flex-DPE（每个大小为128）的后期布局和布线面积以及功率。两种设计在SRAM中每个周期具有相同的128字输入带宽。 SIGMA的主要间接费用是高度灵活，无阻塞的分销和减少网络，可导致37.7％的区域间接费用。但是，SIGMA提供的性能提升（稍后在VI-C节中显示）导致有效TFLOP / Watt平均提高3.2倍。从28nm设计扩展到12nm设计时，我们预计功率性能将进一步提高7倍。这基于NVIDIA K20X和NVIDIA T4之间的FP32 FLOP增长，其中计算增长了约2倍，而功耗却下降了约3.5倍。 SIGMA以1周期分布，1周期乘法和1周期降级的方式进行流水线传输。 SIGMA的关键路径是分布，但是可以通过进一步流水分布来匹配TPU的最大工作频率，从而使新的关键路径成为FP计算。此外，我们估计具有1024个AND门，1024个OR门，1024个计数器和128个SRC-DEST表的全局控制器消耗约1.4mm2的空间。
+
 ![20200902102006](https://raw.githubusercontent.com/milk2we/picgo/master/images/20200902102006.png)
 
 >For 16384 total PEs, we performed a design-space exploration for sizing Flex-DPE units to find the most energy and area efficient configuration. Fig. 9 depicts that a Flex-DPE of size 128 Flex-DPE consumes the least energy, while a Flex-DPE size of 512 is the most area efficient. We decide to use Flex-DPE-128 to match the per-cycle SRAM read bandwidth of the TPU.
 
 对于总共16384个PE，我们进行了设计空间探索，以调整Flex-DPE单元的尺寸，以找到最节能和最省电的配置。 图9描绘了大小为128的Flex-DPE消耗的能量最少，而大小为512的Flex-DPE的区域效率最高。 我们决定使用Flex-DPE-128来匹配TPU的每周期SRAM读取带宽。
+
 ![20200902102024](https://raw.githubusercontent.com/milk2we/picgo/master/images/20200902102024.png)
 
 >VI. EVALUATION
@@ -385,6 +393,7 @@ A.方法论
 
 >Comparison Metrics. Table II defines comparison metrics we use across our evaluation graphs.
 比较指标。 表II定义了我们在评估图中使用的比较指标。
+
 ![20200902101903](https://raw.githubusercontent.com/milk2we/picgo/master/images/20200902101903.png)
 
 
